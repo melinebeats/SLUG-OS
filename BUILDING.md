@@ -88,6 +88,20 @@ valgrind is installed (exact, about 45 s more); without either it is timed, a ro
 After an intended change of the sound, `GOLDEN_UPDATE=1 sh tests/run_tests.sh` rewrites
 the hashes; `BUDGET_UPDATE=1` does the same for the cost files.
 
+## Slug OS emulator
+
+The whole firmware in a browser: screen, keys, buttons, knobs, lights and sound, from the same sources, with only
+the hardware layer replaced (`firmware/host/emu.c`). It needs Python 3 with Pillow, clang with the wasm32 target and
+`wasm-ld` (lld), and Node.js for the test; no JieLi toolchain, SDK, Docker or FM-1.
+
+```sh
+sh tests/run_emu_tests.sh                          # build build/emu/site/ and test it headless
+python3 -m http.server 8766 -d build/emu/site      # open http://localhost:8766/ and press Switch on
+```
+
+The headless test writes the screens it saw to `build/emu/screens/`. Not emulated yet: flash storage (saves are not
+kept after a reload), USB and MIDI.
+
 ## Browser audio preview
 
 The browser preview uses the firmware's DSP and sequencer with RAM-backed user samples.

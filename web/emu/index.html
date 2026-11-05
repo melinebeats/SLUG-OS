@@ -1,0 +1,358 @@
+<title>Slug OS Emulator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Chivo+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one instrument on a walnut ground. The device is a dark slab: screen and knobs on top, the two button
+   rows, then the 27 keys; the help sits under it. One deliberate dark look, no light variant. */
+:root {
+  --ground: #2a1f19;        /* walnut */
+  --ground-2: #3a2b22;
+  --body: #141413;          /* the device */
+  --body-edge: #2c2b28;
+  --print: #b9b2a5;         /* silk-screen labels */
+  --print-dim: #77716a;
+  --ivory: #e6dfd0;         /* white keys */
+  --ebony: #1f1e1c;         /* black keys */
+  --lamp: #f2a33a;          /* a lit key or button: amber */
+  --lamp-glow: rgba(242, 163, 58, .38);
+  --rec: #e5483b;
+  --ok: #8fcf8a;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --mono: "Chivo Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { background: var(--ground); color: var(--print); }
+body {
+  font-family: var(--mono); font-size: 13px; line-height: 1.5;
+  padding-block: 24px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: radial-gradient(120% 80% at 50% 0%, var(--ground-2), var(--ground) 70%) fixed;
+}
+.wrap { max-width: 880px; margin: 0 auto; display: grid; gap: 18px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+h1 { font-family: var(--display); font-weight: 800; font-size: clamp(26px, 5vw, 38px); letter-spacing: -.01em; margin: 0; color: var(--ivory); text-wrap: balance; }
+h1 span { color: var(--lamp); }
+.tag { color: var(--print-dim); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+
+/* the device */
+.device {
+  background: linear-gradient(180deg, #1b1a18, var(--body));
+  border: 1px solid var(--body-edge); border-radius: 22px; padding: clamp(14px, 3vw, 26px);
+  box-shadow: 0 30px 60px -20px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.05);
+  display: grid; gap: clamp(14px, 2.5vw, 22px); touch-action: manipulation; user-select: none; -webkit-user-select: none;
+}
+.top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: clamp(14px, 3vw, 28px); align-items: start; }
+@media (max-width: 640px) { .top { grid-template-columns: minmax(0, 1fr); } }
+
+.screen-box { position: relative; width: 100%; max-width: 480px; aspect-ratio: 1; background: #000; border-radius: 6px;
+  border: 6px solid #0b0b0a; box-shadow: 0 0 0 1px var(--body-edge); overflow: hidden; }
+canvas#screen { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+.power { position: absolute; inset: 0; display: grid; place-content: center; gap: 14px; text-align: center; padding: 20px;
+  background: #050505; color: var(--print); }
+.power p { margin: 0; max-width: 30ch; color: var(--print-dim); }
+.power .err { color: var(--rec); }
+button.on { font: 600 15px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: #1a1209; background: var(--lamp);
+  border: 0; border-radius: 999px; padding: 12px 26px; cursor: pointer; justify-self: center; }
+button.on:focus-visible, .ctl:focus-visible { outline: 2px solid var(--ivory); outline-offset: 3px; }
+
+/* knobs */
+.knobs { display: grid; grid-template-columns: repeat(2, auto); gap: 14px 18px; align-content: start; justify-content: center; }
+@media (max-width: 640px) { .knobs { grid-template-columns: repeat(4, auto); } }
+.dials { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; max-width: 480px; }
+.knob { display: grid; justify-items: center; gap: 6px; }
+.knob .cap { width: 52px; height: 52px; border-radius: 50%; position: relative; cursor: ns-resize; touch-action: none;
+  background: radial-gradient(circle at 35% 30%, #4a4844, #252422 60%, #1a1918); box-shadow: 0 4px 10px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08); }
+.knob .cap::after { content: ""; position: absolute; left: 50%; top: 6px; width: 3px; height: 14px; margin-left: -1.5px; border-radius: 2px;
+  background: var(--k, var(--ivory)); transform-origin: 50% 20px; transform: rotate(var(--a, 0deg)); }
+.knob.small .cap { width: 44px; height: 44px; }
+.knob.small .cap::after { height: 11px; transform-origin: 50% 16px; }
+.knob label { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--print); }
+
+/* buttons */
+.rows { display: grid; gap: 10px; }
+.row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: clamp(6px, 1.4vw, 12px); }
+.btn { position: relative; display: grid; justify-items: center; gap: 5px; }
+.btn .face { width: 100%; max-width: 74px; height: 30px; border-radius: 7px; cursor: pointer; border: 1px solid #000;
+  background: linear-gradient(180deg, #34322e, #22211f); box-shadow: 0 3px 0 #0a0a09, inset 0 1px 0 rgba(255,255,255,.07); }
+.btn .face.down { transform: translateY(2px); box-shadow: 0 1px 0 #0a0a09; }
+.btn span { font-size: 10px; letter-spacing: .1em; color: var(--print); }
+.btn[data-led="3"] .face { background: linear-gradient(180deg, #ffbe62, var(--lamp)); box-shadow: 0 3px 0 #6b4310, 0 0 16px var(--lamp-glow); }
+.btn[data-led="2"] .face { box-shadow: 0 3px 0 #0a0a09, inset 0 0 10px var(--lamp-glow); }
+.btn.rec span { color: var(--rec); }
+
+/* keys: 16 white, 11 black (F3 .. G5) */
+.keys-wrap { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: end; }
+.oct { display: grid; gap: 10px; }
+.oct .btn .face { width: 46px; }
+.keys { position: relative; height: clamp(110px, 20vw, 150px); }
+.key { position: absolute; top: 0; cursor: pointer; border-radius: 0 0 6px 6px; touch-action: none; }
+.key.w { height: 100%; background: linear-gradient(180deg, #d6cfbf, var(--ivory) 12%); border: 1px solid #000; box-shadow: inset 0 -6px 0 #c9c0ad; }
+.key.b { height: 60%; background: linear-gradient(180deg, #2c2b29, var(--ebony)); border: 1px solid #000; z-index: 2; box-shadow: inset 0 -5px 0 #000; }
+.key.down.w { background: #cfc6b3; box-shadow: inset 0 -2px 0 #b5ab96; }
+.key.down.b { background: #111; box-shadow: inset 0 -2px 0 #000; }
+.key[data-led="3"]::after, .key[data-led="2"]::after, .key[data-led="1"]::after { content: ""; position: absolute; left: 50%; bottom: 10px;
+  width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: var(--lamp); box-shadow: 0 0 10px var(--lamp); }
+.key[data-led="2"]::after { opacity: .35; box-shadow: none; }
+.key[data-led="1"]::after { opacity: .15; box-shadow: none; }
+.key i { position: absolute; bottom: 22px; left: 0; right: 0; text-align: center; font-style: normal; font-size: 9px; color: #6d6555; }
+.key kbd { position: absolute; top: 6px; left: 0; right: 0; text-align: center; font: 9px var(--mono); color: #8c8371; }
+.key.b kbd { color: #6b6964; }
+@media (max-width: 640px) { .key kbd { display: none; } }
+
+/* status and help */
+.status { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: var(--print-dim); font-variant-numeric: tabular-nums; }
+.status b { color: var(--print); font-weight: 600; }
+.meter { width: 80px; height: 6px; background: #2a2926; border-radius: 3px; overflow: hidden; align-self: center; }
+.meter div { height: 100%; width: 0; background: var(--ok); transition: width .08s linear; }
+.help { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 24px; color: var(--print-dim); font-size: 12px; }
+.help h2 { font: 600 11px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--print); margin: 0 0 6px; }
+.help p, .help ul { margin: 0; padding: 0; list-style: none; }
+.help li { padding: 2px 0; }
+.help kbd { font: 11px var(--mono); color: var(--ivory); background: #1e1a17; border: 1px solid #4a3d33; border-radius: 4px; padding: 0 5px; }
+@media (prefers-reduced-motion: reduce) { .meter div { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Slug <span>OS</span> emulator</h1>
+    <div class="tag">Step 0 · the SLOOP 2.8.5 base, unchanged</div>
+  </header>
+
+  <section class="device" aria-label="FM-1">
+    <div class="top">
+      <div style="display:grid; gap:12px; min-width:0">
+        <div class="screen-box">
+          <canvas id="screen" width="240" height="240" aria-label="FM-1 screen"></canvas>
+          <div class="power" id="power">
+            <button class="on" id="on" type="button">Switch on</button>
+            <p id="power-msg">Starts the firmware and its sound. Use headphones or speakers.</p>
+          </div>
+        </div>
+        <div class="dials" id="dials"></div>
+      </div>
+      <div class="knobs" id="knobs"></div>
+    </div>
+
+    <div class="rows">
+      <div class="row" id="row1"></div>
+      <div class="row" id="row2"></div>
+    </div>
+
+    <div class="keys-wrap">
+      <div class="oct" id="oct"></div>
+      <div class="keys" id="keys"></div>
+    </div>
+
+    <div class="status" aria-live="polite">
+      <span id="st-power">Off</span>
+      <span>Tempo <b id="st-bpm">–</b></span>
+      <span>Transport <b id="st-play">stopped</b></span>
+      <span>Voices <b id="st-voices">0</b> of 8</span>
+      <span style="display:flex; gap:8px">Level <span class="meter"><div id="st-meter"></div></span></span>
+    </div>
+  </section>
+
+  <section class="help">
+    <div>
+      <h2>Play</h2>
+      <ul>
+        <li>Click or touch the keys. Computer keys: <kbd>A</kbd>–<kbd>'</kbd> are the white keys F3 to B4, <kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd> <kbd>Y</kbd> <kbd>U</kbd> <kbd>O</kbd> <kbd>P</kbd> <kbd>[</kbd> the black keys.</li>
+        <li><kbd>-</kbd> <kbd>=</kbd> octave down / up.</li>
+      </ul>
+    </div>
+    <div>
+      <h2>Buttons</h2>
+      <ul>
+        <li><kbd>1</kbd>–<kbd>6</kbd> FX, SEL, ENV, LFO, EDIT, GLO</li>
+        <li><kbd>7</kbd> ARP · <kbd>8</kbd> SEQ · <kbd>9</kbd> SAVE · <kbd>0</kbd> HOME</li>
+        <li><kbd>Space</kbd> PLAY · <kbd>Enter</kbd> REC</li>
+        <li>Hold a button (mouse or key) for its layer, as on the FM-1.</li>
+      </ul>
+    </div>
+    <div>
+      <h2>Knobs</h2>
+      <ul>
+        <li>Drag up or down, or use the mouse wheel.</li>
+        <li><kbd>←</kbd> <kbd>→</kbd> SELECT (tempo) · <kbd>,</kbd> <kbd>.</kbd> ALGORITHM (track) · <kbd>↑</kbd> <kbd>↓</kbd> PRESETS (sound)</li>
+        <li>Not kept yet: saving, MIDI, USB.</li>
+      </ul>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  // the panel (firmware/src/panel.c): button labels B_* and knob roles EN_*, in the firmware's order
+  const BTN = ['FX', 'SEL', 'ENV', 'LFO', 'EDIT', 'GLO', 'HOME', 'SAVE', 'ARP', 'SEQ', 'PLAY', 'REC', 'OCT-', 'OCT+'];
+  const B = Object.fromEntries(BTN.map((n, i) => [n, i]));
+  const KNOB = { SELECT: 0, ALGORITHM: 1, PRESETS: 2, 'KNOB 1': 3, 'KNOB 2': 4, 'KNOB 3': 5, 'KNOB 4': 6 };
+  const DIAL_COLOURS = ['#4d8dff', '#3fcf7a', '#e7c548', '#ff7d3a'];   // the four dials on the screen
+
+  let node = null, ctx = null;
+  const send = (m) => node && node.port.postMessage(m);
+  const el = (tag, cls, parent) => { const e = document.createElement(tag); if (cls) e.className = cls; parent && parent.appendChild(e); return e; };
+
+  // ---- buttons
+  const btnEls = [];
+  function makeButton(label, parent) {
+    const id = B[label], b = el('div', 'btn' + (label === 'REC' ? ' rec' : ''), parent), face = el('div', 'face ctl', b);
+    face.tabIndex = 0; face.setAttribute('role', 'button'); face.setAttribute('aria-label', label);
+    el('span', '', b).textContent = label;
+    const down = (e) => { e.preventDefault(); face.setPointerCapture?.(e.pointerId); press(id, true); };
+    const up = () => press(id, false);
+    face.addEventListener('pointerdown', down);
+    face.addEventListener('pointerup', up);
+    face.addEventListener('pointercancel', up);
+    btnEls[id] = b;
+  }
+  const held = new Set();
+  function press(id, down) {
+    const k = 'b' + id;
+    if (down === held.has(k)) return;
+    down ? held.add(k) : held.delete(k);
+    btnEls[id]?.querySelector('.face').classList.toggle('down', down);
+    send({ t: 'btn', id, down });
+  }
+  ['FX', 'SEL', 'ENV', 'LFO', 'EDIT', 'GLO'].forEach((n) => makeButton(n, document.getElementById('row1')));
+  ['HOME', 'SAVE', 'ARP', 'SEQ', 'PLAY', 'REC'].forEach((n) => makeButton(n, document.getElementById('row2')));
+  ['OCT+', 'OCT-'].forEach((n) => makeButton(n, document.getElementById('oct')));
+
+  // ---- knobs (endless encoders; MASTER is a pot)
+  function makeKnob(label, parent, opts = {}) {
+    const k = el('div', 'knob' + (opts.small ? ' small' : ''), parent), cap = el('div', 'cap ctl', k);
+    cap.tabIndex = 0; cap.setAttribute('role', 'slider'); cap.setAttribute('aria-label', label);
+    if (opts.colour) cap.style.setProperty('--k', opts.colour);
+    el('label', '', k).textContent = label;
+    let angle = opts.pot ? opts.value * 270 / 1023 - 135 : 0, value = opts.value ?? 0, acc = 0, lastY = 0;
+    const turn = (steps) => {
+      if (opts.pot) { value = Math.max(0, Math.min(1023, value + steps * 24)); angle = value * 270 / 1023 - 135; send({ t: 'master', v: value }); }
+      else { angle += steps * 18; send({ t: 'knob', id: KNOB[label], steps }); }
+      cap.style.setProperty('--a', angle + 'deg');
+    };
+    cap.style.setProperty('--a', angle + 'deg');
+    cap.addEventListener('pointerdown', (e) => { e.preventDefault(); cap.setPointerCapture(e.pointerId); lastY = e.clientY; acc = 0; });
+    cap.addEventListener('pointermove', (e) => {
+      if (!cap.hasPointerCapture(e.pointerId)) return;
+      acc += lastY - e.clientY; lastY = e.clientY;
+      const s = Math.trunc(acc / 10); if (s) { acc -= s * 10; turn(s); }
+    });
+    cap.addEventListener('wheel', (e) => { e.preventDefault(); turn(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+    cap.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); turn(1); }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); turn(-1); }
+    });
+    return turn;
+  }
+  const knobs = document.getElementById('knobs'), turns = {};
+  ['SELECT', 'ALGORITHM', 'PRESETS'].forEach((n) => (turns[n] = makeKnob(n, knobs)));
+  makeKnob('MASTER', knobs, { pot: true, value: 720 });
+  const dials = document.getElementById('dials');
+  ['KNOB 1', 'KNOB 2', 'KNOB 3', 'KNOB 4'].forEach((n, i) => makeKnob(n, dials, { small: true, colour: DIAL_COLOURS[i] }));
+
+  // ---- keys: note key n is n semitones above F3 (bit n of the firmware's notes), its light id 14 + n
+  const keysEl = document.getElementById('keys'), keyEls = [];
+  const WHITE = [0, 2, 4, 6, 7, 9, 11, 12, 14, 16, 18, 19, 21, 23, 24, 26];
+  const NAMES = ['F', 'F#', 'G', 'G#', 'A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E'];
+  const KBD = { KeyA: 0, KeyW: 1, KeyS: 2, KeyE: 3, KeyD: 4, KeyR: 5, KeyF: 6, KeyG: 7, KeyY: 8, KeyH: 9, KeyU: 10, KeyJ: 11,
+    KeyK: 12, KeyO: 13, KeyL: 14, KeyP: 15, Semicolon: 16, BracketLeft: 17, Quote: 18 };
+  const KBD_LABEL = Object.fromEntries(Object.entries(KBD).map(([c, n]) => [n, { Semicolon: ';', BracketLeft: '[', Quote: "'" }[c] || c.slice(3)]));
+  const ww = 100 / WHITE.length;
+  for (let n = 0; n < 27; n++) {
+    const white = WHITE.includes(n), k = el('div', 'key ' + (white ? 'w' : 'b'), keysEl);
+    if (white) { const i = WHITE.indexOf(n); k.style.left = i * ww + '%'; k.style.width = ww + '%'; }
+    else { const i = WHITE.indexOf(n - 1); k.style.left = (i + 1) * ww - ww * 0.32 + '%'; k.style.width = ww * 0.64 + '%'; }
+    const name = NAMES[n % 12];
+    if (white && name === 'C') el('i', '', k).textContent = 'C' + (n < 12 ? 4 : 5);
+    if (KBD_LABEL[n] != null) el('kbd', '', k).textContent = KBD_LABEL[n];
+    k.setAttribute('aria-label', name + (3 + Math.floor((n + 5) / 12)));
+    const down = (e) => { e.preventDefault(); k.setPointerCapture?.(e.pointerId); key(n, true); };
+    const up = () => key(n, false);
+    k.addEventListener('pointerdown', down);
+    k.addEventListener('pointerup', up);
+    k.addEventListener('pointercancel', up);
+    keyEls[n] = k;
+  }
+  function key(n, down) {
+    const k = 'k' + n;
+    if (down === held.has(k)) return;
+    down ? held.add(k) : held.delete(k);
+    keyEls[n].classList.toggle('down', down);
+    send({ t: 'key', id: n, down });
+  }
+
+  // ---- the computer keyboard
+  const KEYBTN = { Digit1: 'FX', Digit2: 'SEL', Digit3: 'ENV', Digit4: 'LFO', Digit5: 'EDIT', Digit6: 'GLO', Digit7: 'ARP', Digit8: 'SEQ',
+    Digit9: 'SAVE', Digit0: 'HOME', Space: 'PLAY', Enter: 'REC', NumpadEnter: 'REC', Minus: 'OCT-', Equal: 'OCT+' };
+  const KEYKNOB = { ArrowLeft: ['SELECT', -1], ArrowRight: ['SELECT', 1], ArrowUp: ['PRESETS', 1], ArrowDown: ['PRESETS', -1],
+    Comma: ['ALGORITHM', -1], Period: ['ALGORITHM', 1] };
+  const typing = (e) => e.target.closest?.('input, textarea, select');
+  window.addEventListener('keydown', (e) => {
+    if (typing(e) || e.metaKey || e.ctrlKey || e.altKey || !node) return;
+    if (KBD[e.code] != null) { e.preventDefault(); if (!e.repeat) key(KBD[e.code], true); }
+    else if (KEYBTN[e.code]) { e.preventDefault(); if (!e.repeat) press(B[KEYBTN[e.code]], true); }
+    else if (KEYKNOB[e.code] && !e.target.closest?.('.knob')) { e.preventDefault(); const [n, s] = KEYKNOB[e.code]; turns[n](s); }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (KBD[e.code] != null) key(KBD[e.code], false);
+    else if (KEYBTN[e.code]) press(B[KEYBTN[e.code]], false);
+  });
+  window.addEventListener('blur', () => {               // nothing stays held when the window loses focus
+    held.forEach((h) => (h[0] === 'k' ? key(+h.slice(1), false) : press(+h.slice(1), false)));
+  });
+
+  // ---- the screen and the lights
+  const canvas = document.getElementById('screen'), g = canvas.getContext('2d'), img = g.createImageData(240, 240);
+  function draw(s) {
+    const d = img.data;
+    for (let i = 0; i < s.length; i++) {
+      const v = ((s[i] & 0xff) << 8) | (s[i] >> 8);    // bytes swapped, as the panel takes them
+      const r = v >> 11, gg = (v >> 5) & 63, b = v & 31, o = i * 4;
+      d[o] = (r << 3) | (r >> 2); d[o + 1] = (gg << 2) | (gg >> 4); d[o + 2] = (b << 3) | (b >> 2); d[o + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+  }
+  const $ = (id) => document.getElementById(id);
+  function onState(m) {
+    if (m.screen) draw(m.screen);
+    for (let n = 0; n < 27; n++) keyEls[n].dataset.led = m.leds[14 + n];
+    m.ids.forEach((id, b) => btnEls[b] && (btnEls[b].dataset.led = m.leds[id]));
+    $('st-bpm').textContent = m.bpm;
+    $('st-play').textContent = m.playing ? 'playing' : 'stopped';
+    $('st-voices').textContent = m.voices;
+    $('st-meter').style.width = Math.min(100, m.peak * 100) + '%';
+  }
+
+  // ---- power on: the audio thread loads the firmware (it needs a click: browsers start sound only after one)
+  $('on').addEventListener('click', async () => {
+    const msg = $('power-msg');
+    msg.classList.remove('err'); msg.textContent = 'Starting…';
+    try {
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      if (!Audio || !window.AudioWorkletNode) throw new Error('This browser cannot run the emulator’s audio. Try a recent Chrome, Edge, Firefox or Safari.');
+      ctx = new Audio({ sampleRate: 44100, latencyHint: 'interactive' });
+      await ctx.resume();
+      const res = await fetch('slug-emu.wasm');
+      if (!res.ok) throw new Error('The firmware file (slug-emu.wasm) did not load.');
+      const bytes = await res.arrayBuffer();
+      await ctx.audioWorklet.addModule('emu-worklet.js');
+      node = new AudioWorkletNode(ctx, 'slug-emu', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { bytes } });
+      node.port.onmessage = ({ data }) => data.t === 'state' && onState(data);
+      node.onprocessorerror = () => { $('st-power').textContent = 'Stopped: the firmware hit an error. Reload the page.'; };
+      node.connect(ctx.destination);
+      $('power').hidden = true;
+      $('st-power').textContent = ctx.sampleRate === 44100 ? 'On · 44.1 kHz'
+        : 'On · this browser plays at ' + ctx.sampleRate / 1000 + ' kHz, so the pitch is off. Try Chrome or Edge.';
+    } catch (err) {
+      msg.classList.add('err');
+      msg.textContent = err.message || String(err);
+      if (ctx) { ctx.close(); ctx = null; }
+      node = null;
+    }
+  });
+})();
+</script>

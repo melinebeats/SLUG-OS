@@ -93,6 +93,14 @@ Slug OS is a "70s session band in your pocket": an idea starter for making origi
 - Engines: `firmware/src/eng_*.c`, registered in `engines.c` `ENGINES[]` (order is stored in projects: append only).
 - Chords: `seq.c` `chord_notes`, `chord_play_notes`, `chord_mod_of_key` (CHORD+ black keys), `P_STRUM`, `P_VLEAD`.
 - Hardware build (`./build.sh` -> `tools/build.py`) needs the JieLi pi32v2 toolchain + 3 AC79 SDK files; `pkgman.jieliapp.com` is blocked in the cloud sandbox, so hardware images must be built on the user's machine (or the network allowlist widened).
+- **The emulator (the development loop, step 0 done):** `sh tests/run_emu_tests.sh` builds `build/emu/site/`
+  (`tools/build_emu.py`: `firmware/host/emu.c` + `web/emu/`) and tests it headless (`tests/emu_test.mjs`, screens in
+  `build/emu/screens/`). Serve with `python3 -m http.server 8766 -d build/emu/site`. `emu.c` includes the firmware
+  sources as `felucca.c` does and replaces only the HAL; storage, USB, MIDI are stubs. Every feature must pass here
+  before hardware. The user tries it as a published Artifact (web/emu/index.html + emu-worklet.js + slug-emu.wasm).
+- Decisions (user, step 0): the drum track becomes EXTRA (keep drums.c for later); hide song mode, punch-in FX,
+  the visualiser and the editor LIVE page behind compile-time switches (do not delete); use the screen for Next
+  Chord. Hardware builds later, in the cloud: list the exact hosts to allow first.
 - Host/browser builds need only clang (+ wasm-ld) and Python with Pillow:
   - generated headers: `python3 tools/gen_{font,icons,tables,samples,drumkits,fm6_patches,logo}.py build/gen/<header>` (see `tools/build.py generate()`).
   - audio-only WASM preview: `python3 tools/build_preview.py && sh tests/run_preview_tests.sh`.
