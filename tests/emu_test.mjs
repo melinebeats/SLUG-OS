@@ -75,9 +75,9 @@ check(lit() > 2000, 'HOME: the TRACKS screen is drawn after the logo');
 png('02-home');
 
 check(measure(300) < 0.001, 'silence before anything is played');
-E.emu_key(12, 1); run(30);                                  // C5 (key 12 from F3) on track 1
+E.emu_key(12, 1); run(30);                                  // F4 (key 12 from F3) on track 2, RHODES
 const held = measure(400);
-check(held > 0.01, `a key held plays the selected track (peak ${held.toFixed(3)})`);
+check(held > 0.1, `a key held plays the selected track, loud enough for small speakers (peak ${held.toFixed(3)})`);
 check(E.emu_voices() >= 1, 'the shared voice budget counts the note');
 const leds = new Uint8Array(mem(), E.emu_leds(), 41);
 check(leds[14 + 12] === 3 || true, 'the key lights are read back (the page shows them)');
@@ -112,9 +112,8 @@ release(B.SEL); run(300);
 tap(B.SEQ); run(400); png('06-seq');
 tap(B.HOME); run(400);
 
-// chord mode on track 2 (RHODES, a POLY sound; track 1 is a MONO bass): ALGORITHM picks the track, SEL held +
-// KNOB 1 the chord, then one key plays several voices
-E.emu_knob(K.ALGO, 1); run(200);
+// chord mode on track 2 (RHODES, a POLY sound; the emulator starts there: track 1's 808 is too low for laptop
+// speakers): SEL held + KNOB 1 the chord, then one key plays several voices
 press(B.SEL); E.emu_knob(K.K1, 2); run(200); release(B.SEL); run(300);
 E.emu_key(7, 1); run(400);
 check(E.emu_voices() >= 3, `chord mode: one key plays a chord (${E.emu_voices()} voices)`);

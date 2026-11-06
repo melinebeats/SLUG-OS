@@ -107,6 +107,10 @@ button.on:focus-visible, .ctl:focus-visible { outline: 2px solid var(--ivory); o
 /* status and help */
 .status { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: var(--print-dim); font-variant-numeric: tabular-nums; }
 .status b { color: var(--print); font-weight: 600; }
+.status .test { font: 600 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: #1a1209; background: var(--lamp);
+  border: 0; border-radius: 999px; padding: 3px 12px; cursor: pointer; }
+.status .test:disabled { background: #3a3733; color: var(--print-dim); cursor: default; }
+.status .test:focus-visible { outline: 2px solid var(--ivory); outline-offset: 2px; }
 .meter { width: 80px; height: 6px; background: #2a2926; border-radius: 3px; overflow: hidden; align-self: center; }
 .meter div { height: 100%; width: 0; background: var(--ok); transition: width .08s linear; }
 .help { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 24px; color: var(--print-dim); font-size: 12px; }
@@ -149,7 +153,8 @@ button.on:focus-visible, .ctl:focus-visible { outline: 2px solid var(--ivory); o
     </div>
 
     <div class="status" aria-live="polite">
-      <span id="st-power">Off</span>
+      <span>Sound <b id="st-power">off</b></span>
+      <button class="test" id="test" type="button" disabled>Test sound</button>
       <span>Tempo <b id="st-bpm">–</b></span>
       <span>Transport <b id="st-play">stopped</b></span>
       <span>Voices <b id="st-voices">0</b> of 8</span>
@@ -193,8 +198,8 @@ button.on:focus-visible, .ctl:focus-visible { outline: 2px solid var(--ivory); o
   const KNOB = { SELECT: 0, ALGORITHM: 1, PRESETS: 2, 'KNOB 1': 3, 'KNOB 2': 4, 'KNOB 3': 5, 'KNOB 4': 6 };
   const DIAL_COLOURS = ['#4d8dff', '#3fcf7a', '#e7c548', '#ff7d3a'];   // the four dials on the screen
 
-  let node = null, ctx = null;
-  const send = (m) => node && node.port.postMessage(m);
+  let node = null, ctx = null, sink = null;   // sink: where the controls go (the audio thread, or the backup below)
+  const send = (m) => sink && sink(m);
   const el = (tag, cls, parent) => { const e = document.createElement(tag); if (cls) e.className = cls; parent && parent.appendChild(e); return e; };
 
   // ---- buttons
@@ -250,7 +255,7 @@ button.on:focus-visible, .ctl:focus-visible { outline: 2px solid var(--ivory); o
   }
   const knobs = document.getElementById('knobs'), turns = {};
   ['SELECT', 'ALGORITHM', 'PRESETS'].forEach((n) => (turns[n] = makeKnob(n, knobs)));
-  makeKnob('MASTER', knobs, { pot: true, value: 720 });
+  makeKnob('MASTER', knobs, { pot: true, value: 1023 });
   const dials = document.getElementById('dials');
   ['KNOB 1', 'KNOB 2', 'KNOB 3', 'KNOB 4'].forEach((n, i) => makeKnob(n, dials, { small: true, colour: DIAL_COLOURS[i] }));
 
@@ -327,32 +332,96 @@ button.on:focus-visible, .ctl:focus-visible { outline: 2px solid var(--ivory); o
     $('st-meter').style.width = Math.min(100, m.peak * 100) + '%';
   }
 
+  // ---- sound status: what the browser is doing with the audio, in words
+  let mode = '';
+  function showSound() {
+    const s = $('st-power');
+    if (!ctx) { s.textContent = 'off'; return; }
+    if (ctx.state !== 'running') { s.textContent = 'paused by the browser: click anywhere on the page'; return; }
+    s.textContent = 'on' + (mode ? ' (' + mode + ')' : '') + (ctx.sampleRate === 44100 ? '' : ', at ' + ctx.sampleRate / 1000 + ' kHz: the pitch is off, try Chrome or Edge');
+  }
+  // a browser may pause the sound (a tab in the background, a phone call): any touch brings it back
+  document.addEventListener('pointerdown', () => { if (ctx && ctx.state !== 'running') ctx.resume().then(showSound, showSound); }, true);
+
+  // the backup: the firmware on the page's own thread (ScriptProcessor), for browsers or frames that refuse the
+  // audio thread (AudioWorklet). Same firmware, same sound; heavy screens may stutter a little more.
+  function startBackup(bytes) {
+    const w = new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports;
+    w.emu_init();
+    const ids = []; for (let b = 0; b < 14; b++) ids.push(w.emu_button_id(b));
+    const block = w.emu_block() * 4;
+    let buf = new Float32Array(0), pos = 0, peak = 0;
+    const sp = ctx.createScriptProcessor(1024, 0, 2);
+    sp.onaudioprocess = (e) => {
+      const L = e.outputBuffer.getChannelData(0), R = e.outputBuffer.getChannelData(1);
+      for (let i = 0; i < L.length; i++) {
+        if (pos >= buf.length) { buf = new Float32Array(w.memory.buffer, w.emu_run(block), block * 2); pos = 0; }
+        L[i] = buf[pos]; R[i] = buf[pos + 1]; pos += 2;
+        const a = Math.abs(L[i]); if (a > peak) peak = a;
+      }
+    };
+    sp.connect(ctx.destination);
+    node = sp;
+    sink = (m) => {
+      if (m.t === 'key') w.emu_key(m.id, m.down ? 1 : 0);
+      else if (m.t === 'btn') w.emu_button(m.id, m.down ? 1 : 0);
+      else if (m.t === 'knob') w.emu_knob(m.id, m.steps);
+      else if (m.t === 'master') w.emu_set_master(m.v);
+    };
+    setInterval(() => {
+      const m = { leds: new Uint8Array(w.memory.buffer, w.emu_leds(), 41), ids, playing: w.emu_playing(), bpm: w.emu_bpm(),
+        voices: w.emu_voices(), peak };
+      peak = 0;
+      if (w.emu_screen_dirty()) m.screen = new Uint16Array(w.memory.buffer, w.emu_screen(), 240 * 240);
+      onState(m);
+    }, 33);
+  }
+
   // ---- power on: the audio thread loads the firmware (it needs a click: browsers start sound only after one)
   $('on').addEventListener('click', async () => {
     const msg = $('power-msg');
     msg.classList.remove('err'); msg.textContent = 'Starting…';
     try {
       const Audio = window.AudioContext || window.webkitAudioContext;
-      if (!Audio || !window.AudioWorkletNode) throw new Error('This browser cannot run the emulator’s audio. Try a recent Chrome, Edge, Firefox or Safari.');
+      if (!Audio) throw new Error('This browser cannot play the emulator’s sound. Try a recent Chrome, Edge, Firefox or Safari.');
       ctx = new Audio({ sampleRate: 44100, latencyHint: 'interactive' });
+      ctx.onstatechange = showSound;
       await ctx.resume();
       const res = await fetch('slug-emu.wasm');
       if (!res.ok) throw new Error('The firmware file (slug-emu.wasm) did not load.');
       const bytes = await res.arrayBuffer();
-      await ctx.audioWorklet.addModule('emu-worklet.js');
-      node = new AudioWorkletNode(ctx, 'slug-emu', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { bytes } });
-      node.port.onmessage = ({ data }) => data.t === 'state' && onState(data);
-      node.onprocessorerror = () => { $('st-power').textContent = 'Stopped: the firmware hit an error. Reload the page.'; };
-      node.connect(ctx.destination);
+      try {
+        if (!window.AudioWorkletNode) throw new Error('no AudioWorklet');
+        await ctx.audioWorklet.addModule('emu-worklet.js');
+        node = new AudioWorkletNode(ctx, 'slug-emu', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { bytes } });
+        node.port.onmessage = ({ data }) => data.t === 'state' && onState(data);
+        node.onprocessorerror = () => { $('st-power').textContent = 'stopped: the firmware hit an error. Reload the page.'; };
+        node.connect(ctx.destination);
+        sink = (m) => node.port.postMessage(m);
+        mode = '';
+      } catch (e) {
+        console.warn('Slug emulator: the audio thread is not available here, using the backup', e);
+        startBackup(bytes);
+        mode = 'backup mode';
+      }
+      if (ctx.state !== 'running') await ctx.resume();
       $('power').hidden = true;
-      $('st-power').textContent = ctx.sampleRate === 44100 ? 'On · 44.1 kHz'
-        : 'On · this browser plays at ' + ctx.sampleRate / 1000 + ' kHz, so the pitch is off. Try Chrome or Edge.';
+      $('test').disabled = false;
+      showSound();
     } catch (err) {
       msg.classList.add('err');
       msg.textContent = err.message || String(err);
       if (ctx) { ctx.close(); ctx = null; }
-      node = null;
+      node = sink = null;
     }
+  });
+
+  // ---- Test sound: a C major 7 chord on the selected track for a second, through the firmware
+  $('test').addEventListener('click', () => {
+    if (ctx && ctx.state !== 'running') ctx.resume();
+    const chord = [7, 11, 14, 18];                       // C4 E4 G4 B4
+    chord.forEach((n) => key(n, true));
+    setTimeout(() => chord.forEach((n) => key(n, false)), 1000);
   });
 })();
 </script>

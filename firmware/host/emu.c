@@ -89,7 +89,7 @@ static int32_t fm1_enc_take(uint32_t e)
     return s;
 }
 /* MASTER (an ADC on the FM-1): 0..1023 */
-static int32_t emu_master = 720;
+static int32_t emu_master = 1023;            /* full: the page's MASTER starts there too */
 #define FM1_ADC_MASTER 1
 #define FM1_ADC_BATT 3
 static int32_t fm1_adc_read(int c) { return c == FM1_ADC_MASTER ? emu_master : -1; }
@@ -268,8 +268,11 @@ void emu_init(void)
     }
     TDRUM->p[P_E0] = DRUM_DEFAULT_KIT;
     dsu_defaults();
-    song.sel = 0;
-    song.master_q12 = 2048;
+    /* the emulator starts on track 2 (RHODES): track 1's 808 plays around 60 Hz, which laptop and phone speakers
+     * barely reproduce, so the first keys pressed seemed silent. (The FM-1 starts on track 1; step 2 makes the
+     * first track CHORDS anyway.) */
+    song.sel = 1;
+    song.master_q12 = 4096;
     layers_init();
     sloop_splash();                               /* the boot logo; the first pass after ~1 s clears it */
     emu_next_pass = 900;
